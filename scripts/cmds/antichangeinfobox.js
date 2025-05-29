@@ -58,10 +58,10 @@ module.exports = {
 			antiChangeThemeOff: "Turn off anti change theme box chat",
 			antiChangeEmojiOn: "Turn on anti change emoji box chat",
 			antiChangeEmojiOff: "Turn off anti change emoji box chat",
-			antiChangeAvatarAlreadyOn: "Your box chat is currently on anti change avatar",
+			antiChangeAvatarAlreadyOn: "Anti raid to boy 😂",
 			antiChangeAvatarAlreadyOnButMissingAvt: "Your box chat is currently on anti change avatar but your box chat has not set avatar",
-			antiChangeNameAlreadyOn: "Your box chat is currently on anti change name",
-			antiChangeNicknameAlreadyOn: "Your box chat is currently on anti change nickname",
+			antiChangeNameAlreadyOn: "Wanna be raider?😂",
+			antiChangeNicknameAlreadyOn: "Ginamit ni GabYu ang kanyang protection on",
 			antiChangeThemeAlreadyOn: "Your box chat is currently on anti change theme",
 			antiChangeEmojiAlreadyOn: "Your box chat is currently on anti change emoji"
 		}
