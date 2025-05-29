@@ -17,15 +17,15 @@
     "ignoreCommand": []
   },
   "adminBot": [
-    "61573167867733",
-    "61572886646174"
+    "61562953390569",
+    "100079114908948"
   ],
   "whiteListMode": {
     "enable": false,
     "whiteListIds": [],
     "notes": "if you enable this feature, only the ids in the whiteListIds section can use the bot"
   },
-  "nickNameBot": "Zen Bot",
+  "nickNameBot": "𝗧𝗔𝗣𝗛 『 / 』",
   "prefix": "!",
   "database": {
     "type": "sqlite",
