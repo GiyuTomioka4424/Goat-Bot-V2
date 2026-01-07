@@ -1,46 +1,63 @@
+const fs = require("fs-extra");
+const path = require("path");
+const JAIL_FILE = path.join(process.cwd(), "jailData.json");
+
 module.exports = {
-	config: {
-		name: "balance",
-		aliases: ["bal"],
-		version: "1.2",
-		author: "NTKhang",
-		countDown: 5,
-		role: 0,
-		description: {
-			vi: "xem số tiền hiện có của bạn hoặc người được tag",
-			en: "view your money or the money of the tagged person"
-		},
-		category: "economy",
-		guide: {
-			vi: "   {pn}: xem số tiền của bạn"
-				+ "\n   {pn} <@tag>: xem số tiền của người được tag",
-			en: "   {pn}: view your money"
-				+ "\n   {pn} <@tag>: view the money of the tagged person"
-		}
-	},
+    config: {
+        name: "balance",
+        aliases: ["bal", "money"],
+        version: "2.6",
+        author: "Gab Yu",
+        countDown: 5,
+        role: 0,
+        category: "economy"
+    },
 
-	langs: {
-		vi: {
-			money: "Bạn đang có %1$",
-			moneyOf: "%1 đang có %2$"
-		},
-		en: {
-			money: "You have %1$",
-			moneyOf: "%1 has %2$"
-		}
-	},
+    onStart: async function ({ message, usersData, event, api }) {
+        const { senderID, mentions, messageID } = event;
+        const format = (num) => num.toLocaleString();
+        const header = `💳 ➤ 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗕𝗔𝗟𝗔𝗡𝗖𝗘\n━━━━━━━━━━━━━━━\n`;
+        const footer = `\n━━━━━━━━━━━━━━━\n🏛 𝖲𝖾𝖼𝗎𝗋𝖾 𝖣𝗂𝗀𝗂𝗍𝖺𝗅 𝖵𝖺𝗎𝗅`;
 
-	onStart: async function ({ message, usersData, event, getLang }) {
-		if (Object.keys(event.mentions).length > 0) {
-			const uids = Object.keys(event.mentions);
-			let msg = "";
-			for (const uid of uids) {
-				const userMoney = await usersData.get(uid, "money");
-				msg += getLang("moneyOf", event.mentions[uid].replace("@", ""), userMoney) + '\n';
-			}
-			return message.reply(msg);
-		}
-		const userData = await usersData.get(event.senderID);
-		message.reply(getLang("money", userData.money));
-	}
+        if (fs.existsSync(JAIL_FILE)) {
+            const jailList = fs.readJsonSync(JAIL_FILE);
+            if (jailList[senderID] && Date.now() < jailList[senderID].releaseAt) {
+                api.unsendMessage(messageID).catch(() => {});
+                return message.reply(`⛓️ **ACCESS DENIED**\nPrisoners cannot access financial records.`);
+            }
+        }
+
+        if (Object.keys(mentions).length > 0) {
+            let msg = header;
+            for (const uid in mentions) {
+                const userMoney = await usersData.get(uid, "money") || 0;
+                let name = await usersData.getName(uid);
+                if (!name || name.includes("Facebook")) name = "User"; // Fix
+                msg += `👤 ${name}\n💰 Cash: $${format(userMoney)}\n\n`;
+            }
+            return message.reply(msg.trim() + footer);
+        }
+
+        const userData = await usersData.get(senderID);
+        const money = userData.money || 0;
+        let senderName = await usersData.getName(senderID);
+        if (!senderName || senderName.includes("Facebook")) senderName = "User"; // Fix
+
+        let statusText = "📝 Active";
+        let debtInfo = "";
+        if (money < 0) {
+            statusText = "🔴 IN DEBT";
+            debtInfo = `\n📉 **Remaining Fine:** ₱${format(Math.abs(money))}`;
+        } else if (money > 1000000) {
+            statusText = "💎 Rich";
+        }
+
+        return message.reply(
+            header +
+            `👤 𝗨𝘀𝗲𝗿: ${senderName}\n` +
+            `💰 𝗪𝗮𝗹𝗹𝗲𝘁: $${format(money)}\n` +
+            `📊 𝗦𝘁𝗮𝘁𝘂𝘀: ${statusText}${debtInfo}` +
+            footer
+        );
+    }
 };
