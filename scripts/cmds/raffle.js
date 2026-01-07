@@ -1,8 +1,9 @@
 const fs = require("fs-extra");
 const path = require("path");
 
-const SHOP_FILE = path.join(__dirname, "userItems.json");
-const BANK_FILE = path.join(__dirname, "bankData.json");
+// Adjusted paths to match your system
+const SHOP_FILE = path.join(__dirname, "cache", "userItems.json");
+const BANK_FILE = path.join(__dirname, "cache", "bankData.json");
 
 if (!global.raffleSystem) {
     global.raffleSystem = {
@@ -14,7 +15,7 @@ if (!global.raffleSystem) {
 module.exports = {
     config: {
         name: "raffle",
-        version: "1.7",
+        version: "1.7.1",
         author: "Gab Yu",
         countDown: 5,
         role: 0,
@@ -36,7 +37,7 @@ module.exports = {
             try {
                 const threads = await api.getThreadList(100, null, ["INBOX"]);
                 const groupThreads = threads.filter(t => t.isGroup);
-                
+
                 groupThreads.forEach(g => {
                     api.sendMessage(
                         "🎫 **𝗠𝗔𝗖𝗞𝗬 𝗠𝗬𝗦𝗧𝗘𝗥𝗬 𝗥𝗔𝗙𝗙𝗟𝗘**\n━━━━━━━━━━━━━━━\n" +
@@ -45,8 +46,7 @@ module.exports = {
                         "👉 Type `!raffle join` to enter!", g.threadID);
                 });
             } catch (err) {
-                console.error("Broadcast Error:", err);
-                return message.reply("📢 Raffle started, but global broadcast failed. You can still join in this GC!");
+                return message.reply("📢 Raffle started locally. Global broadcast limited.");
             }
             return;
         }
@@ -56,10 +56,14 @@ module.exports = {
             if (!system.isOpen) return message.reply("🏟️ The raffle is closed.");
             if (system.participants.some(p => p.uid === senderID)) return message.reply("❌ Already joined.");
 
-            let name = await usersData.getName(senderID);
-            if (!name || name.includes("Facebook")) name = `User ${senderID.slice(-4)}`;
+            // Rule: You cannot join a raffle to "gamble" for items if you have a loan
+            const bankData = fs.existsSync(BANK_FILE) ? fs.readJsonSync(BANK_FILE) : {};
+            if (bankData[senderID] && bankData[senderID].loan > 0) {
+                return message.reply("🚫 **ENTRY DENIED**: Clear your bank debt before joining the mystery raffle!");
+            }
 
-            system.participants.push({ uid: senderID, name });
+            let name = await usersData.getName(senderID);
+            system.participants.push({ uid: senderID, name: name || senderID });
             return message.reply(`✅ **ENTRY CONFIRMED** (#${system.participants.length})`);
         }
 
@@ -74,15 +78,14 @@ module.exports = {
             const winnersCash = pool.splice(0, 2);
             const winnersItem = pool.splice(0, 2);
             const mysteryItems = ["Arena VIP Pass", "Gold Miner Pickaxe", "Bank Shield", "Double Money Card"];
-            
-            // Process Cash Winners with Auto-Pay
+
+            // Process Cash Winners
             for (const w of winnersCash) {
                 let prize = 20000000;
                 const u = await usersData.get(w.uid);
                 let currentMoney = u.money || 0;
                 let bankData = fs.existsSync(BANK_FILE) ? fs.readJsonSync(BANK_FILE) : {};
 
-                // ⚖️ Pay Bank Loan First
                 if (bankData[w.uid] && bankData[w.uid].loan > 0) {
                     const toBank = Math.min(prize, bankData[w.uid].loan);
                     bankData[w.uid].loan -= toBank;
@@ -90,22 +93,21 @@ module.exports = {
                     fs.writeJsonSync(BANK_FILE, bankData, { spaces: 2 });
                 }
 
-                // ⚖️ Pay Arrest Fine (Negative Balance)
                 if (prize > 0 && currentMoney < 0) {
                     const toFine = Math.min(prize, Math.abs(currentMoney));
                     currentMoney += toFine;
                     prize -= toFine;
                 }
-
                 await usersData.set(w.uid, { money: currentMoney + prize });
             }
 
             // Process Item Winners
+            if (!fs.existsSync(path.join(__dirname, "cache"))) fs.mkdirSync(path.join(__dirname, "cache"));
             let inventory = fs.existsSync(SHOP_FILE) ? fs.readJsonSync(SHOP_FILE) : {};
             winnersItem.forEach(w => {
                 const awardedItem = mysteryItems[Math.floor(Math.random() * mysteryItems.length)];
-                if (!inventory[w.uid]) inventory[w.uid] = {};
-                inventory[w.uid][awardedItem] = (inventory[w.uid][awardedItem] || 0) + 1;
+                if (!inventory[w.uid]) inventory[w.uid] = [];
+                inventory[w.uid].push(awardedItem);
                 w.itemWon = awardedItem;
             });
             fs.writeJsonSync(SHOP_FILE, inventory, { spaces: 2 });
@@ -116,4 +118,15 @@ module.exports = {
                 `1. ${winnersCash[0].name}\n` +
                 `2. ${winnersCash[1].name}\n\n` +
                 "🎁 **MYSTERY ITEM WINNERS:**\n" +
-                `1. ${winnersItem[0].name} (Won: ${winnersItem[0].itemWon})\n` +
+                `1. ${winnersItem[0].name} (${winnersItem[0].itemWon})\n` +
+                `2. ${winnersItem[1].name} (${winnersItem[1].itemWon})\n\n` +
+                "✨ Prizes have been distributed!";
+
+            const threads = await api.getThreadList(100, null, ["INBOX"]);
+            threads.filter(t => t.isGroup).forEach(g => api.sendMessage(resultMsg, g.threadID));
+            return;
+        }
+
+        return message.reply("❓ Usage: `!raffle [start/join/spin]`");
+    }
+};
