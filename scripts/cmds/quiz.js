@@ -1,108 +1,97 @@
 const axios = require('axios');
-const fs = require('fs').promises;
+const fs = require('fs-extra');
 const path = require('path');
 
-const userDataFilePath = path.join(__dirname, 'user.json');
+const JAIL_FILE = path.join(process.cwd(), "jailData.json");
+const spamTracker = new Map();
 
 module.exports = {
   config: {
     name: "quiz",
-    aliases: [],
-    version: "2.0",
-    author: "Kshitiz",
+    aliases: ["q", "trivia"],
+    version: "3.0",
+    author: "Kshitiz & Gab Yu",
+    countDown: 5,
     role: 0,
-    shortDescription: "Play quiz",
-    longDescription: "Play a quiz based on different categories",
-    category: "fun",
-    guide: {
-      en: "{p}quiz2 list | top | category"
-    }
+    category: "fun"
   },
 
   onStart: async function ({ event, message, usersData, api, args }) {
-    if (args.length === 1 && args[0] === "list") {
-      const categories = [
-        "gk",
-        "music",
-        "videogame",
-        "naturescience",
-        "computerscience",
-        "math",
-        "mythology",
-        "sports",
-        "geography",
-        "history",
-        "politics",
-        "art",
-        "celebrety",
-        "anime",
-        "cartoon"
-      ];
-      return message.reply(`Available categories: ${categories.join(", ")}`);
-    } else if (args.length === 1 && args[0] === "top") {
-      const topUsers = await getTopUsers(usersData, api);
-      if (topUsers.length === 0) {
-        return message.reply("No users found.");
-      } else {
-        const topUsersString = topUsers.map((user, index) => `${index + 1}. ${user.username}: ${user.money} coins`).join("\n");
-        return message.reply(`Top 5 pro players:\n${topUsersString}`);
-      }
-    } else if (args.length === 1) {
-      const category = args[0].toLowerCase();
-      const quizData = await fetchQuiz(category);
-      if (!quizData) {
-        return message.reply("Failed to fetch quiz question. Please try again later.");
-      }
+    const { senderID, threadID } = event;
 
-      const { question, options } = quizData;
-      const optionsString = options.map((opt, index) => `${String.fromCharCode(65 + index)}.${opt.answer}`).join("\n");
-
-      const sentQuestion = await message.reply(`Question: ${question}\nOptions:\n${optionsString}`);
-
-      global.GoatBot.onReply.set(sentQuestion.messageID, {
-        commandName: this.config.name,
-        messageID: sentQuestion.messageID,
-        correctAnswerLetter: quizData.correct_answer_letter
-      });
-
-      setTimeout(async () => {
-        try {
-          await message.unsend(sentQuestion.messageID);
-        } catch (error) {
-          console.error("Error while unsending question:", error);
+    // 🚨 SPAM / AUTO-ARREST LOGIC
+    const now = Date.now();
+    const userSpam = spamTracker.get(senderID) || { count: 0, last: 0 };
+    if (now - userSpam.last < 1000) { 
+        userSpam.count++;
+        if (userSpam.count >= 6) {
+            const jailList = fs.existsSync(JAIL_FILE) ? fs.readJsonSync(JAIL_FILE) : {};
+            jailList[senderID] = { releaseAt: Date.now() + 3600000, reason: "Trivia System Exploitation" };
+            fs.writeJsonSync(JAIL_FILE, jailList);
+            await usersData.set(senderID, { money: -20000000 });
+            return message.reply("🚨 **𝗔𝗨𝗧𝗢-𝗔𝗥𝗥𝗘𝗦𝗧**\nYou were caught spamming the trivia interface. You are now in **Jail** and fined **₱20M**.");
         }
-      }, 20000); 
-    } else {
-      return message.reply("Invalid usage. Type `quiz list` to see available categories, `quiz top` to see top players, or `quiz {category}` to start a quiz.");
+    } else { userSpam.count = 0; }
+    userSpam.last = now;
+    spamTracker.set(senderID, userSpam);
+
+    // 🚫 PRISONER RESTRICTION
+    const jailList = fs.existsSync(JAIL_FILE) ? fs.readJsonSync(JAIL_FILE) : {};
+    if (jailList[senderID] && Date.now() < jailList[senderID].releaseAt) {
+      return message.reply("🚫 **𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗**\nPrisoners are not allowed to participate in educational quizzes!");
     }
+
+    // --- SUBCOMMANDS ---
+    if (args[0] === "list") {
+      const categories = ["gk", "music", "videogame", "math", "history", "anime", "geography"];
+      return message.reply(`📋 **𝗔𝗩𝗔𝗜𝗟𝗔𝗕𝗟𝗘 𝗧𝗢𝗣𝗜𝗖𝗦**\n━━━━━━━━━━━━━━━\n${categories.join(" • ")}\n\n💡 Use: !quiz {topic}`);
+    }
+
+    if (args[0] === "top") {
+        return message.reply("📊 This feature is currently undergoing maintenance.");
+    }
+
+    // --- QUIZ EXECUTION ---
+    const category = args[0]?.toLowerCase() || "gk";
+    const quizData = await fetchQuiz(category);
+    if (!quizData) return message.reply("❌ Error fetching data. Topic might not exist.");
+
+    // ✨ START ANIMATION
+    const initMsg = await api.sendMessage("🔍 **𝗜𝗡𝗜𝗧𝗜𝗔𝗟𝗜𝗭𝗜𝗡𝗚 𝗠𝗔𝗖𝗞𝗬-𝗤𝗨𝗜𝗭...**\n`[▒▒▒▒▒▒▒▒▒▒]` 0%", threadID);
+    await new Promise(r => setTimeout(r, 800));
+    await api.editMessage("🔍 **𝗟𝗢𝗔𝗗𝗜𝗡𝗚 𝗤𝗨𝗘𝗦𝗧𝗜𝗢𝗡...**\n`[▓▓▓▓▓▓░░░░]` 60%", initMsg.messageID);
+    await new Promise(r => setTimeout(r, 800));
+
+    const { question, options } = quizData;
+    const optionsString = options.map((opt, index) => `${String.fromCharCode(65 + index)}. ${opt.answer}`).join("\n");
+
+    const quizContent = `📝 **𝗠𝗔𝗖𝗞𝗬 𝗧𝗥𝗜𝗩𝗜𝗔: ${category.toUpperCase()}**\n━━━━━━━━━━━━━━━\n❓ **𝗤𝘂𝗲𝘀𝘁𝗶𝗼𝗻:**\n${question}\n\n**𝗢𝗽𝘁𝗶𝗼𝗻𝘀:**\n${optionsString}\n━━━━━━━━━━━━━━━\n⏱️ *Reply with the correct letter (A, B, C, or D) within 20s!*`;
+
+    await api.editMessage(quizContent, initMsg.messageID);
+
+    global.GoatBot.onReply.set(initMsg.messageID, {
+      commandName: this.config.name,
+      messageID: initMsg.messageID,
+      correctAnswerLetter: quizData.correct_answer_letter
+    });
+
+    setTimeout(() => { api.unsend(initMsg.messageID).catch(() => {}); }, 20000);
   },
 
   onReply: async function ({ message, event, Reply, usersData }) {
-    const userAnswer = event.body.trim();
-    const correctAnswerLetter = Reply.correctAnswerLetter.toUpperCase();
+    const userAnswer = event.body.trim().toUpperCase();
+    const { correctAnswerLetter, messageID } = Reply;
 
     if (userAnswer === correctAnswerLetter) {
-      const userID = event.senderID;
-      await addCoins(userID, 500, usersData);
-      await message.reply("🎉🎊 Congratulations! Your answer is correct. You have received 500 coins.");
+      const currentMoney = (await usersData.get(event.senderID)).money || 0;
+      await usersData.set(event.senderID, { money: currentMoney + 500 });
+      await message.reply("🎉 **𝗖𝗢𝗥𝗥𝗘𝗖𝗧!**\nYou earned **$500**. Your knowledge is impressive!");
     } else {
-      await message.reply(`🥺 Oops! Wrong answer. The correct answer was: ${correctAnswerLetter}`);
+      await message.reply(`🥺 **𝗜𝗡𝗖𝗢𝗥𝗥𝗘𝗖𝗧**\nThe right answer was **${correctAnswerLetter}**.`);
     }
 
-    try {
-      await message.unsend(event.messageID);
-    } catch (error) {
-      console.error("Error while unsending message:", error);
-    }
-
-    const { commandName, messageID } = Reply;
-    if (commandName === this.config.name) {
-      try {
-        await message.unsend(messageID);
-      } catch (error) {
-        console.error("Error while unsending question:", error);
-      }
-    }
+    message.unsend(event.messageID).catch(() => {});
+    message.unsend(messageID).catch(() => {});
   }
 };
 
@@ -110,62 +99,5 @@ async function fetchQuiz(category) {
   try {
     const response = await axios.get(`https://new-quiz-black.vercel.app/quiz?category=${category}`);
     return response.data;
-  } catch (error) {
-    console.error("Error fetching quiz question:", error);
-    return null;
-  }
-}
-
-async function addCoins(userID, amount, usersData) {
-  try {
-    let userData = await usersData.get(userID);
-    if (!userData) {
-      userData = { money: 0 };
-    }
-    userData.money += amount;
-    await usersData.set(userID, userData);
-  } catch (error) {
-    console.error("Error adding coins:", error);
-  }
-}
-
-async function getTopUsers(usersData, api) {
-  const allUserData = await getAllUserData(usersData);
-  const userIDs = Object.keys(allUserData);
-  const topUsers = [];
-
-  for (const userID of userIDs) {
-    api.getUserInfo(userID, async (err, userInfo) => {
-      if (err) {
-        console.error("Failed to retrieve user information:", err);
-        return;
-      }
-
-      const username = userInfo[userID].name;
-      if (username) {
-        const userData = allUserData[userID];
-        topUsers.push({ username, money: userData.money });
-      }
-    });
-  }
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(topUsers.sort((a, b) => b.money - a.money).slice(0, 5));
-    }, 2000);
-  });
-}
-
-async function getAllUserData(usersData) {
-  try {
-    const allUserData = {};
-    const allUsers = await usersData.all();
-    allUsers.forEach(user => {
-      allUserData[user.userID] = user.value;
-    });
-    return allUserData;
-  } catch (error) {
-    console.error("Error reading user data:", error);
-    return {};
-  }
+  } catch (e) { return null; }
 }
