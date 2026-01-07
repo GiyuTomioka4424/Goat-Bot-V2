@@ -4,8 +4,8 @@ const regExCheckURL = /^(http|https):\/\/[^ "]+$/;
 module.exports = {
 	config: {
 		name: "uid",
-		version: "1.3",
-		author: "NTKhang",
+		version: "2.1",
+		author: "NTKhang x Gab Yu",
 		countDown: 5,
 		role: 0,
 		description: {
@@ -14,50 +14,56 @@ module.exports = {
 		},
 		category: "info",
 		guide: {
-			vi: "   {pn}: dùng để xem id facebook của bạn"
-				+ "\n   {pn} @tag: xem id facebook của những người được tag"
-				+ "\n   {pn} <link profile>: xem id facebook của link profile"
-				+ "\n   Phản hồi tin nhắn của người khác kèm lệnh để xem id facebook của họ",
-			en: "   {pn}: use to view your facebook user id"
-				+ "\n   {pn} @tag: view facebook user id of tagged people"
-				+ "\n   {pn} <profile link>: view facebook user id of profile link"
-				+ "\n   Reply to someone's message with the command to view their facebook user id"
+			en: "{pn} | @tag | <link profile>"
 		}
 	},
 
-	langs: {
-		vi: {
-			syntaxError: "Vui lòng tag người muốn xem uid hoặc để trống để xem uid của bản thân"
-		},
-		en: {
-			syntaxError: "Please tag the person you want to view uid or leave it blank to view your own uid"
-		}
-	},
+	onStart: async function ({ message, event, args }) {
+		const { threadID, senderID, messageReply, mentions } = event;
 
-	onStart: async function ({ message, event, args, getLang }) {
-		if (event.messageReply)
-			return message.reply(event.messageReply.senderID);
-		if (!args[0])
-			return message.reply(event.senderID);
+		const formatMsg = (content) => {
+			return `👤 **𝗠𝗔𝗖𝗞𝗬 𝗨𝗦𝗘𝗥 𝗜𝗗𝗘𝗡𝗧𝗜𝗧𝗬**\n` +
+				`━━━━━━━━━━━━━━━━━━\n\n` +
+				`${content}\n\n` +
+				`━━━━━━━━━━━━━━━━━━\n` +
+				`✨ *Use these IDs for bank/arrest/jail!*`;
+		};
+
+		// 1. Reply case
+		if (messageReply) {
+			return message.reply(formatMsg(`🆔 **UID:** ${messageReply.senderID}`));
+		}
+
+		// 2. Empty case (Self)
+		if (!args[0]) {
+			return message.reply(formatMsg(`🆔 **Your UID:** ${senderID}`));
+		}
+
+		// 3. Link case
 		if (args[0].match(regExCheckURL)) {
-			let msg = '';
+			let result = '';
 			for (const link of args) {
 				try {
 					const uid = await findUid(link);
-					msg += `${link} => ${uid}\n`;
+					result += `🔗 ${link}\n🆔 **UID:** ${uid}\n\n`;
 				}
 				catch (e) {
-					msg += `${link} (ERROR) => ${e.message}\n`;
+					result += `🔗 ${link}\n❌ **ERROR:** Failed to fetch UID\n\n`;
 				}
 			}
-			message.reply(msg);
-			return;
+			return message.reply(formatMsg(result.trim()));
 		}
 
-		let msg = "";
-		const { mentions } = event;
-		for (const id in mentions)
-			msg += `${mentions[id].replace("@", "")}: ${id}\n`;
-		message.reply(msg || getLang("syntaxError"));
+		// 4. Mentions case
+		let mentionResult = "";
+		const mentionKeys = Object.keys(mentions);
+		if (mentionKeys.length > 0) {
+			for (const id of mentionKeys) {
+				mentionResult += `👤 **${mentions[id].replace("@", "")}**\n🆔 **UID:** ${id}\n\n`;
+			}
+			return message.reply(formatMsg(mentionResult.trim()));
+		}
+
+		return message.reply("⚠ Please tag someone, reply to a message, or provide a link.");
 	}
 };
