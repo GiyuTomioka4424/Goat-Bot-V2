@@ -28,17 +28,17 @@ module.exports = {
 	langs: {
 		vi: {
 			missingMessage: "Vui lòng nhập tin nhắn bạn muốn gửi đến tất cả các nhóm",
-			notification: "𝗧𝗵ô𝗻𝗴 𝗯á𝗼 𝘁ừ 𝗦𝘂𝗽𝗲𝗿 𝗔𝗱𝗺𝗶𝗻",
+			notification: "📢 𝗠𝗔𝗖𝗞𝗬 𝗨𝗣𝗗𝗔𝗧𝗘",
 			sendingNotification: "Bắt đầu gửi thông báo từ admin bot đến %1 nhóm chat",
 			sentNotification: "✅ Đã gửi thông báo đến %1 nhóm thành công",
 			errorSendingNotification: "Có lỗi xảy ra khi gửi đến %1 nhóm:\n%2"
 		},
 		en: {
-			missingMessage: "Please enter the message you want to send to all groups",
-			notification: "𝗔𝗻𝗻𝗼𝘂𝗻𝗰𝗲𝗺𝗲𝗻𝘁 𝗳𝗿𝗼𝗺 𝗦𝘂𝗽𝗲𝗿 𝗔𝗱𝗺𝗶𝗻",
-			sendingNotification: "Start sending notification from admin bot to %1 chat groups",
-			sentNotification: "✅ Sent notification to %1 groups successfully",
-			errorSendingNotification: "An error occurred while sending to %1 groups:\n%2"
+			missingMessage: "Vui lòng nhập tin nhắn bạn muốn gửi đến tất cả các nhóm",
+			notification: "📢 𝗠𝗔𝗖𝗞𝗬 𝗨𝗣𝗗𝗔𝗧𝗘\n──────────────────",
+			sendingNotification: "Sending update to %1 groups...",
+			sentNotification: "✅ Update sent to %1 groups.",
+			errorSendingNotification: "Error sending to %1 groups:\n%2"
 		}
 	},
 
@@ -47,7 +47,7 @@ module.exports = {
 		if (!args[0])
 			return message.reply(getLang("missingMessage"));
 		const formSend = {
-			body: `${getLang("notification")}\n────────────────\n${args.join(" ")}`,
+			body: `${getLang("notification")}\n\n${args.join(" ")}\n\n──────────────────`,
 			attachment: await getStreamsFromAttachment(
 				[
 					...event.attachments,
