@@ -1,11 +1,11 @@
-const fs = require("fs");
+const fs = require("fs-extra");
 const path = require("path");
 
 module.exports = {
     config: {
         name: "top",
-        aliases: ["leaderboard", "richest"], // 'rank' removed as requested
-        version: "1.6",
+        aliases: ["leaderboard", "richest"],
+        version: "1.6.1",
         author: "Gab Yu",
         countDown: 10,
         role: 0,
@@ -13,16 +13,21 @@ module.exports = {
     },
 
     onStart: async function ({ message, usersData }) {
-        const BANK_FILE = path.join(__dirname, "bankData.json");
+        // Path corrected to match your bank system
+        const BANK_FILE = path.join(__dirname, "cache", "bankData.json");
         
         if (!fs.existsSync(BANK_FILE)) return message.reply("❌ No bank records found yet.");
 
-        const bankData = JSON.parse(fs.readFileSync(BANK_FILE, "utf8"));
+        const bankData = fs.readJsonSync(BANK_FILE);
         const allUsers = await usersData.getAll();
         
         let leaderboard = await Promise.all(allUsers.map(async (user) => {
             const userBank = bankData[user.userID]?.bank || 0;
+            const userLoan = bankData[user.userID]?.loan || 0;
             const userWallet = user.money || 0;
+            
+            // Net Worth = Wallet + Bank - Unpaid Loans
+            const netWorth = (userWallet + userBank) - userLoan;
             
             let name = await usersData.getName(user.userID);
             if (!name || name.includes("Facebook")) {
@@ -31,10 +36,11 @@ module.exports = {
 
             return {
                 name: name,
-                total: userBank + userWallet
+                total: netWorth
             };
         }));
 
+        // Sort by net worth
         leaderboard.sort((a, b) => b.total - a.total);
         const top15 = leaderboard.slice(0, 15);
 
