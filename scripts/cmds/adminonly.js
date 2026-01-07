@@ -1,69 +1,56 @@
 const fs = require("fs-extra");
-const { config } = global.GoatBot;
-const { client } = global;
 
 module.exports = {
-	config: {
-		name: "adminonly",
-		aliases: ["adonly", "onlyad", "onlyadmin"],
-		version: "1.5",
-		author: "NTKhang",
-		countDown: 5,
-		role: 2,
-		description: {
-			vi: "bật/tắt chế độ chỉ admin mới có thể sử dụng bot",
-			en: "turn on/off only admin can use bot"
-		},
-		category: "owner",
-		guide: {
-			vi: "   {pn} [on | off]: bật/tắt chế độ chỉ admin mới có thể sử dụng bot"
-				+ "\n   {pn} noti [on | off]: bật/tắt thông báo khi người dùng không phải là admin sử dụng bot",
-			en: "   {pn} [on | off]: turn on/off the mode only admin can use bot"
-				+ "\n   {pn} noti [on | off]: turn on/off the notification when user is not admin use bot"
-		}
-	},
+    config: {
+        name: "adminonly",
+        // I removed "lockbot" from the list below to avoid the conflict
+        aliases: ["adonly", "onlyad", "toggleadmin"], 
+        version: "2.1",
+        author: "NTKhang / Yuan",
+        countDown: 5,
+        role: 2, 
+        description: {
+            vi: "Bật/tắt chế độ chỉ admin mới có thể sử dụng bot",
+            en: "Turn on/off admin-only mode for bot"
+        },
+        category: "owner",
+        guide: {
+            en: "{pn} [on | off]"
+        }
+    },
 
-	langs: {
-		vi: {
-			turnedOn: "Đã bật chế độ chỉ admin mới có thể sử dụng bot",
-			turnedOff: "Đã tắt chế độ chỉ admin mới có thể sử dụng bot",
-			turnedOnNoti: "Đã bật thông báo khi người dùng không phải là admin sử dụng bot",
-			turnedOffNoti: "Đã tắt thông báo khi người dùng không phải là admin sử dụng bot"
-		},
-		en: {
-			turnedOn: "Turned on the mode only admin can use bot",
-			turnedOff: "Turned off the mode only admin can use bot",
-			turnedOnNoti: "Turned on the notification when user is not admin use bot",
-			turnedOffNoti: "Turned off the notification when user is not admin use bot"
-		}
-	},
+    onStart: async function ({ args, message }) {
+        const { config } = global.GoatBot;
+        const configPath = global.client.dirConfig;
 
-	onStart: function ({ args, message, getLang }) {
-		let isSetNoti = false;
-		let value;
-		let indexGetVal = 0;
+        if (!args[0] || !["on", "off"].includes(args[0].toLowerCase())) {
+            return message.reply("Please use: adminonly [on/off]");
+        }
 
-		if (args[0] == "noti") {
-			isSetNoti = true;
-			indexGetVal = 1;
-		}
+        const isEnable = args[0].toLowerCase() === "on";
 
-		if (args[indexGetVal] == "on")
-			value = true;
-		else if (args[indexGetVal] == "off")
-			value = false;
-		else
-			return message.SyntaxError();
+        // Update the global config object
+        config.adminOnly.enable = isEnable;
 
-		if (isSetNoti) {
-			config.hideNotiMessage.adminOnly = !value;
-			message.reply(getLang(value ? "turnedOnNoti" : "turnedOffNoti"));
-		}
-		else {
-			config.adminOnly.enable = value;
-			message.reply(getLang(value ? "turnedOn" : "turnedOff"));
-		}
+        try {
+            // Write to config.json so it persists after restart
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
 
-		fs.writeFileSync(client.dirConfig, JSON.stringify(config, null, 2));
-	}
+            if (isEnable) {
+                return message.reply(
+                    "╔═══════════════════════════╗\n" +
+                    "🔒 ⚡ 𝗕𝗢𝗧 𝗟𝗢𝗖𝗞𝗘𝗗 ⚡ 🔒\n" +
+                    "🛑 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬 𝐚𝗿𝐞 𝐝𝐢𝐬𝐚𝐛𝗹𝗲𝐝 𝐟𝗼𝐫 𝐧𝐨𝐰!\n" +
+                    "📩 𝗖𝗼𝗻𝘁𝗮𝗰𝘁 𝐭𝐡𝐞 𝗮𝗱𝗺𝗶𝗻𝘀:\n" +
+                    "🟦 facebook.com/61562953390569\n" +
+                    "╚═══════════════════════════╝"
+                );
+            } else {
+                return message.reply("🔓 𝗔𝗗𝗠𝗜𝗡-𝗢𝗡𝗟𝗬 𝗠𝗢𝗗𝗘 𝗗𝗜𝗦𝗔𝗕𝗟𝗘𝗗\nAll users can now use the bot.");
+            }
+        } catch (err) {
+            console.error(err);
+            return message.reply("Error: Could not update the config file.");
+        }
+    }
 };
