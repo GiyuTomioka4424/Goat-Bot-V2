@@ -1,0 +1,106 @@
+const fs = require("fs");
+const path = require("path");
+const SHOP_FILE = path.join(__dirname, "userItems.json");
+
+// Persistent State
+if (!global.cgSystem) {
+    global.cgSystem = { 
+        stage: "closed", 
+        pool: [], 
+        startTime: 0, 
+        timer: null 
+    };
+}
+
+module.exports = {
+    config: {
+        name: "colorgame",
+        aliases: ["cg"],
+        version: "11.5",
+        author: "Gab Yu",
+        category: "gambling"
+    },
+
+    onStart: async function ({ message, args, event, usersData, permission, api }) {
+        const { senderID, threadID } = event;
+        const system = global.cgSystem;
+        const colors = ["red", "blue", "yellow", "green", "pink", "white"];
+
+        // --- ADMIN: RESET (Refund & Global Broadcast) ---
+        if (args[0] === "reset") {
+            if (permission < 1) return message.reply("❌ Admins only.");
+            if (system.stage === "closed") return message.reply("⚠ No active round to reset.");
+
+            clearTimeout(system.timer);
+            for (const p of system.pool) {
+                const u = await usersData.get(p.senderID);
+                await usersData.set(p.senderID, { money: (u.money || 0) + p.bet });
+            }
+
+            const refundCount = system.pool.length;
+            system.stage = "closed";
+            system.pool = [];
+
+            const threads = await api.getThreadList(100, null, ["INBOX"]);
+            const groupThreads = threads.filter(t => t.isGroup);
+            const resetMsg = `🔄 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘: 𝗥𝗘𝗦𝗘𝗧 𝗡𝗢𝗧𝗜𝗖𝗘**\n━━━━━━━━━━━━━━━\n⚠ Match cancelled by Admin.\n💰 **Refunds:** ${refundCount} players have been paid back.`;
+
+            groupThreads.forEach(g => api.sendMessage(resetMsg, g.threadID));
+            return;
+        }
+
+        // --- ACTION: STATUS ---
+        if (args[0] === "status") {
+            if (system.stage === "closed") return message.reply("🌈 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘**: 𝗖𝗟𝗢𝗦𝗘𝗗");
+            const limit = system.stage === "betting" ? 300000 : 120000;
+            const remaining = Math.max(0, Math.ceil((limit - (Date.now() - system.startTime)) / 1000));
+            return message.reply(`🌈 **𝗖𝗚 𝗦𝗧𝗔𝗧𝗨𝗦**: ${system.stage.toUpperCase()}\n⏰ Ends in: ${remaining}s\n👥 Players: ${system.pool.length}`);
+        }
+
+        // --- ADMIN: START ---
+        if (args[0] === "start") {
+            if (permission < 1) return message.reply("❌ Admins only.");
+            if (system.stage !== "closed") return message.reply("⚠ Match in progress.");
+
+            system.stage = "betting";
+            system.pool = [];
+            system.startTime = Date.now();
+
+            const threads = await api.getThreadList(100, null, ["INBOX"]);
+            const groupThreads = threads.filter(t => t.isGroup);
+            const startMsg = "📢 𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘: 𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗢𝗣𝗘𝗡\n━━━━━━━━━━━━━━━\n🕒 𝟱 𝗠𝗶𝗻𝘂𝘁𝗲𝘀 to place bets!\n\n💡 **Usage:** `!cg <bet> <color>`\n📝 **Examples:** `!cg 500 red` or `!cg 1000 blue`\n🎨 **Colors:** red, blue, yellow, green, pink, white";
+
+            groupThreads.forEach(g => api.sendMessage(startMsg, g.threadID));
+
+            // Phase 1: End Betting
+            system.timer = setTimeout(() => {
+                if (system.pool.length === 0) {
+                    system.stage = "closed";
+                    groupThreads.forEach(g => api.sendMessage("💨 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘**: Cancelled. No bets were placed.", g.threadID));
+                    return;
+                }
+
+                system.stage = "ongoing";
+                system.startTime = Date.now();
+                groupThreads.forEach(g => api.sendMessage("🚫 **𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗖𝗟𝗢𝗦𝗘𝗗**\n🎲 Dice are rolling! Results in 2 minutes...", g.threadID));
+
+                // Phase 2: Results
+                setTimeout(async () => {
+                    const roll = [colors[Math.floor(Math.random()*6)], colors[Math.floor(Math.random()*6)], colors[Math.floor(Math.random()*6)]];
+                    let winnerList = "";
+
+                    for (const p of system.pool) {
+                        const matches = roll.filter(c => c === p.chosen).length;
+                        if (matches > 0) {
+                            let winAmt = p.bet * (matches + 1);
+                            let allInv = fs.existsSync(SHOP_FILE) ? JSON.parse(fs.readFileSync(SHOP_FILE, "utf8")) : {};
+                            let inv = allInv[p.senderID] || {};
+                            if (inv["Crystal Dice"]) winAmt *= 2;
+
+                            const u = await usersData.get(p.senderID);
+                            await usersData.set(p.senderID, { money: (u.money || 0) + winAmt });
+                            winnerList += `✨ ${p.name}: +$${winAmt.toLocaleString()} (${matches}x)\n`;
+                        }
+                    }
+
+                    const finalResult = `🎲 𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘 𝗥𝗘𝗦𝗨𝗟𝗧\n━━━━━━━━━━━━━━━\nResults: [ ${roll.join(" | ").toUpperCase()} ]\n\n📜 **𝗪𝗜𝗡𝗡𝗘𝗥𝗦:**\n${winnerList || "No w
