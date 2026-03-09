@@ -1,103 +1,118 @@
 const fs = require("fs-extra");
 const path = require("path");
 
-const BANK_FILE = path.join(__dirname, "bankData.json");
-const JAIL_FILE = path.join(process.cwd(), "jailData.json");
+const BANK_FILE = path.join(process.cwd(), "cache", "bankData.json");
+const PRISON_FILE = path.join(process.cwd(), "prisonData.json");
+const ITEM_FILE = path.join(process.cwd(), "userItems.json");
+const activeSpins = new Set();
 const spamTracker = new Map();
 
 module.exports = {
     config: {
         name: "slots",
         aliases: ["slot", "spin"],
-        version: "3.5",
+        version: "4.5",
         author: "Gab Yu",
         countDown: 5,
         role: 0,
         category: "game"
     },
 
-    onStart: async function ({ args, message, event, usersData, api }) {
+    onStart: async function ({ args, message, event, usersData, api, threadsData }) {
         const { senderID, threadID } = event;
         const userData = await usersData.get(senderID);
-
-        // 🚨 SPAM / AUTO-ARREST LOGIC
         const now = Date.now();
+
+        if (activeSpins.has(senderID)) return message.reply("⏳ **𝗦𝗟𝗢𝗧𝗦 𝗔𝗖𝗧𝗜𝗩𝗘**\nPlease wait for your current spin to finish!");
+
+        // --- 🚔 CASINO SECURITY (SPAM GUARD) ---
         const userSpam = spamTracker.get(senderID) || { count: 0, last: 0 };
-        
         if (now - userSpam.last < 1500) { 
             userSpam.count++;
-            if (userSpam.count >= 5) {
-                const jailList = fs.existsSync(JAIL_FILE) ? fs.readJsonSync(JAIL_FILE) : {};
-                
-                // 2 HOURS IN PRISON (2 * 60 * 60 * 1000)
-                const sentence = 2 * 60 * 60 * 1000;
+            if (userSpam.count >= 4) {
+                let prisonList = fs.existsSync(PRISON_FILE) ? fs.readJsonSync(PRISON_FILE) : {};
                 const fine = 20000000;
-
-                jailList[senderID] = { 
-                    releaseAt: now + sentence, 
-                    reason: "Slot Machine Spamming" 
+                prisonList[senderID] = { 
+                    name: userData.name || "Gambler",
+                    releaseAt: now + (2 * 60 * 60 * 1000), 
+                    reason: "Casino Exploit (Macro Spamming)" 
                 };
-                fs.writeJsonSync(JAIL_FILE, jailList);
-                
-                // APPLY ₱20M FINE
+                fs.writeJsonSync(PRISON_FILE, prisonList);
                 await usersData.set(senderID, { money: (userData.money || 0) - fine }); 
                 
-                spamTracker.delete(senderID); // Clear tracker
-                return message.reply(`🚨 **𝗔𝗨𝗧𝗢-𝗔𝗥𝗥𝗘𝗦𝗧**\n━━━━━━━━━━━━━━━\n⚠ **Reason:** Slot Spamming\n💸 **Fine:** ₱20,000,000\n⛓ **Sentence:** 2 Hours\n\n*The casino security has escorted you to Macky Prison.*`);
+                const alert = `┏━━━━━━━━━━━━━━━━━━━━┓\n   🚨 𝗠𝗔𝗖𝗞𝗬 𝗖𝗔𝗦𝗜𝗡𝗢 𝗔𝗟𝗘𝗥𝗧\n┗━━━━━━━━━━━━━━━━━━━━┛\n ❯ 𝖲𝗎𝗌𝗉𝖾𝖼𝗍: ${userData.name}\n ❯ 𝖱𝖾𝖺𝗌𝗈𝗇: 𝖤𝗑𝗉𝗅𝗈𝗂𝗍 𝖠𝗍𝗍𝖾𝗆𝗉𝗍\n ❯ 𝖥𝗂𝗇𝖾: $${fine.toLocaleString()}\n ⚖️ 𝖲𝖾𝗇𝗍𝖾𝗇𝖼𝖾: 2 𝖧𝗈𝗎𝗋𝗌`;
+                const threads = (await threadsData.getAll()).filter(t => t.isGroup);
+                for (const t of threads) { api.sendMessage(alert, t.threadID); }
+                return;
             }
-        } else {
-            userSpam.count = 0;
-        }
+        } else { userSpam.count = 0; }
         userSpam.last = now;
         spamTracker.set(senderID, userSpam);
 
-        // 🚫 PRISONER RESTRICTION
-        const jailList = fs.existsSync(JAIL_FILE) ? fs.readJsonSync(JAIL_FILE) : {};
-        if (jailList[senderID] && Date.now() < jailList[senderID].releaseAt) {
-            return message.reply("🚫 **𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗**\nPrisoners are not allowed to use the casino machines!");
+        // --- 🚨 GUARDS ---
+        if (fs.existsSync(PRISON_FILE)) {
+            const prisonList = fs.readJsonSync(PRISON_FILE);
+            if (prisonList[senderID] && now < prisonList[senderID].releaseAt) return message.reply("🚨 **𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗**\nInmates are not allowed on the casino floor.");
         }
-
-        // 🚫 DEBTOR BAN/BLOCK ENFORCEMENT
-        let hasLuckCharm = false;
         if (fs.existsSync(BANK_FILE)) {
             const bankData = fs.readJsonSync(BANK_FILE);
-            const userBank = bankData[senderID] || { loan: 0, luckCharm: false };
-            if (userBank.loan > 0) {
-                return message.reply("🚫 **𝗚𝗔𝗠𝗕𝗟𝗜𝗡𝗚 𝗥𝗘𝗦𝗧𝗥𝗜𝗖𝗧𝗜𝗢𝗡**\nYou are banned from gambling while you have an active loan. Pay your debt at the bank first!");
-            }
-            hasLuckCharm = userBank.luckCharm === true;
+            if (bankData[senderID] && bankData[senderID].loan > 0) return message.reply("🚫 **𝗟𝗢𝗔𝗡 𝗗𝗘𝗧𝗘𝗖𝗧𝗘𝗗**\nYou cannot gamble while you owe the bank! Pay your loan first.");
         }
 
         const bet = parseInt(args[0]);
-        if (isNaN(bet) || bet < 100) return message.reply("❌ Min bet is $100.");
-        if (userData.money < bet) return message.reply("❌ You don't have enough cash in your wallet.");
+        if (isNaN(bet) || bet < 100) return message.reply("❌ **𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗕𝗘𝗧**\nUsage: `!slots [amount]` (Min: $100)");
+        if (userData.money < bet) return message.reply("💸 **𝗕𝗥𝗢𝗞𝗘 𝗔𝗟𝗘𝗥𝗧**\nYou don't have enough money for that bet.");
 
-        // 🎰 START ANIMATION
+        activeSpins.add(senderID);
         const slotItems = ["🍎", "🍋", "🍇", "🍒", "💎", "🎰"];
-        const msg = await api.sendMessage("🎰 **𝗦𝗟𝗢𝗧 𝗠𝗔𝗖𝗛𝗜𝗡𝗘 𝗦𝗣𝗜𝗡𝗡𝗜𝗡𝗚...**\n━━━━━━━━━━━━━━━━━━\n[ 🔄 | 🔄 | 🔄 ]\n━━━━━━━━━━━━━━━━━━", threadID);
-
-        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        const s1 = slotItems[Math.floor(Math.random() * slotItems.length)];
-        const s2 = slotItems[Math.floor(Math.random() * slotItems.length)];
-        const s3 = slotItems[Math.floor(Math.random() * slotItems.length)];
+        // --- 🎰 UNIQUE ANIMATION ---
+        const msg = await api.sendMessage(
+            `✨ 𝗠𝗔𝗖𝗞𝗬'𝗦 𝗡𝗘𝗢𝗡 𝗖𝗔𝗦𝗜𝗡𝗢 ✨\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `🎰 [ 🔄 | 🔄 | 🔄 ]\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `💰 **Betting:** $${bet.toLocaleString()}\n` +
+            `🎰 *Spinning the reels...*`, threadID);
 
-        let resultMsg = "";
-        if (s1 === s2 && s2 === s3) {
-            let win = bet * 15;
-            if (hasLuckCharm) win = Math.floor(win * 2.5);
-            await usersData.set(senderID, { money: (userData.money || 0) + win });
-            resultMsg = `🏆 **𝗝𝗔𝗖𝗞𝗣𝗢𝗧!**\nYou won **$${win.toLocaleString()}**!${hasLuckCharm ? " 🍀" : ""}`;
-        } else if (s1 === s2 || s2 === s3 || s1 === s3) {
-            let win = bet * 2;
-            if (hasLuckCharm) win = Math.floor(win * 2.5);
-            await usersData.set(senderID, { money: (userData.money || 0) + win });
-            resultMsg = `✨ **𝗠𝗜𝗡𝗢𝗥 𝗪𝗜𝗡!**\nYou won **$${win.toLocaleString()}**.`;
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        
+        const s = [slotItems[Math.floor(Math.random() * 6)], slotItems[Math.floor(Math.random() * 6)], slotItems[Math.floor(Math.random() * 6)]];
+        let winMultiplier = 0;
+        let usedCharm = false;
+
+        // Logic for Winning
+        if (s[0] === s[1] && s[1] === s[2]) winMultiplier = 15;
+        else if (s[0] === s[1] || s[1] === s[2] || s[0] === s[2]) winMultiplier = 2;
+
+        let inventory = fs.existsSync(ITEM_FILE) ? fs.readJsonSync(ITEM_FILE) : {};
+        let userInv = inventory[senderID] || {};
+        let hasLuckCharm = userInv["Luck Charm"] > 0;
+
+        let finalResultMsg = "";
+        if (winMultiplier > 0) {
+            // Apply Luck Charm Boost
+            if (hasLuckCharm) {
+                winMultiplier *= 3; // 3x Win Boost
+                userInv["Luck Charm"] -= 1; // 1x Consumption
+                inventory[senderID] = userInv;
+                fs.writeJsonSync(ITEM_FILE, inventory);
+                usedCharm = true;
+            }
+            const reward = bet * winMultiplier;
+            await usersData.set(senderID, { money: userData.money + reward });
+            finalResultMsg = `🏆 **𝗪𝗜𝗡𝗡𝗘𝗥!**\n💰 **Payout:** $${reward.toLocaleString()}\n${usedCharm ? "🍀 *Luck Charm gave you a 3x Boost!*" : ""}`;
         } else {
-            await usersData.set(senderID, { money: (userData.money || 0) - bet });
-            resultMsg = `💸 **𝗕𝗘𝗧 𝗟𝗢𝗦𝗧**\nYou lost **$${bet.toLocaleString()}**. Better luck next time!`;
+            await usersData.set(senderID, { money: userData.money - bet });
+            finalResultMsg = `💸 **𝗕𝗘𝗧 𝗟𝗢𝗦𝗧**\n💰 **Loss:** -$${bet.toLocaleString()}\n*Better luck next time!*`;
         }
 
-        return api.editMessage(`🎰 **𝗦𝗟𝗢𝗧 𝗠𝗔𝗖𝗛𝗜𝗡𝗘 𝗥𝗘𝗦𝗨𝗟𝗧**\n━━━━━━━━━━━━━━━━━━\n[ ${s1} | ${s2} | ${s3} ]\n━━━━━━━━━━━━━━━━━━\n${resultMsg}`, msg.messageID);
+        activeSpins.delete(senderID);
+        return api.editMessage(
+            `✨ 𝗠𝗔𝗖𝗞𝗬'𝗦 𝗡𝗘𝗢𝗡 𝗖𝗔𝗦𝗜𝗡𝗢 ✨\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `🎰 [ ${s[0]} | ${s[1]} | ${s[2]} ]\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `${finalResultMsg}`, msg.messageID);
     }
 };
