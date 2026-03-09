@@ -1,0 +1,14 @@
+{
+  "61562953390569": {
+    "bank": 5000000,
+    "loan": 0,
+    "loanPayed": true,
+    "lastInterestClaimed": 1710000000000
+  },
+  "10000000000002": {
+    "bank": 0,
+    "loan": 11000000,
+    "loanPayed": false,
+    "lastInterestClaimed": 1710000000000
+  }
+}
