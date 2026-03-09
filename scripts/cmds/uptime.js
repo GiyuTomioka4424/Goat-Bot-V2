@@ -3,48 +3,43 @@ const moment = require('moment-timezone');
 module.exports = {
   config: {
     name: "uptime",
-    version: "1.0",
+    version: "1.1",
     aliases: ["upt", "up"],
     author: "kaizenji",
     role: 0,
-    cooldown: 5,
-    shortDescription: {
-      vi: "",
-      en: "Sends information about the bot and admin."
-    },
-    longDescription: {
-      vi: "",
-      en: "Sends information about the bot and admin."
-    },
-    category: "system",
-    guide: {
-      en: "{pn}"
-    },
-    envConfig: {}
+    countDown: 5,
+    category: "system"
   },
 
-  onStart: async function ({ message, prefix }) {
-
-    const now = moment();
-    const date = now.format('MMMM Do YYYY');
+  onStart: async function ({ message }) {
+    const now = moment().tz("Asia/Manila");
+    const date = now.format('MMMM Do, YYYY');
+    const time = now.format('hh:mm:ss A');
 
     const uptime = process.uptime();
-    const seconds = Math.floor(uptime % 60);
-    const minutes = Math.floor((uptime / 60) % 60);
-    const hours = Math.floor((uptime / (60 * 60)) % 24);
     const days = Math.floor(uptime / (60 * 60 * 24));
-    const uptimeString = `${days} days ${hours} hours ${minutes} minutes ${seconds} seconds`;
+    const hours = Math.floor((uptime / (60 * 60)) % 24);
+    const minutes = Math.floor((uptime / 60) % 60);
+    const seconds = Math.floor(uptime % 60);
 
-    const additionalText = "";
+    const uptimeString = `${days}𝖽 ${hours}𝗁 ${minutes}𝗆 ${seconds}𝗌`;
 
-    // Combine the bot information and additional text in a single message
-message.reply(`===[𝗕𝗢𝗧 𝗨𝗣𝗧𝗜𝗠𝗘]===\n\n𝗗𝗮𝘁𝗲: ${date}\n\n𝗨𝗽𝘁𝗶𝗺𝗲: ${uptimeString}
-      
-      ${additionalText}
-    `);
+    const msg = 
+      `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+      `      𝗠𝗔𝗖𝗞𝗬 𝗦𝗬𝗦𝗧𝗘𝗠 𝗨𝗣𝗧𝗜𝗠𝗘\n` +
+      `┗━━━━━━━━━━━━━━━━━━━━┛\n` +
+      ` ❯ 𝖲𝗍𝖺𝗍𝗎𝗌: 𝗢𝗻𝗹𝗶𝗻𝗲\n` +
+      ` ❯ 𝖣𝖺𝗍𝖾: ${date}\n` +
+      ` ❯ 𝖳𝗂𝗆𝖾: ${time}\n` +
+      ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+      ` ⏳ 𝗨𝗽𝘁𝗶𝗺𝗲: ${uptimeString}\n` +
+      ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+      ` 🛡️ 𝖠𝗅𝗅 𝗌𝗒𝗌𝗍𝖾𝗆𝗌 𝗈𝗉𝖾𝗋𝖺𝗍𝗂𝗈𝗇𝖺𝗅.`;
+
+    return message.reply(msg);
   },
 
-  onChat: async function ({ event, message, getLang, prefix }) {
+  onChat: async function ({ event, message, prefix }) {
     if (event.body && event.body.toLowerCase() === "up") {
       this.onStart({ message, prefix });
     }
