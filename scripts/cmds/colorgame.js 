@@ -1,8 +1,11 @@
-const fs = require("fs");
+const fs = require("fs-extra");
 const path = require("path");
-const SHOP_FILE = path.join(__dirname, "userItems.json");
 
-// Persistent State
+// FIXED: Using process.cwd() for global synchronization
+const BANK_FILE = path.join(process.cwd(), "cache", "bankData.json");
+const SHOP_FILE = path.join(process.cwd(), "userItems.json");
+const PRISON_FILE = path.join(process.cwd(), "prisonData.json");
+
 if (!global.cgSystem) {
     global.cgSystem = { 
         stage: "closed", 
@@ -16,91 +19,123 @@ module.exports = {
     config: {
         name: "colorgame",
         aliases: ["cg"],
-        version: "11.5",
+        version: "11.8",
         author: "Gab Yu",
-        category: "gambling"
+        category: "gambling",
+        countDown: 5
     },
 
-    onStart: async function ({ message, args, event, usersData, permission, api }) {
+    onStart: async function ({ message, args, event, usersData, permission, api, threadsData }) {
         const { senderID, threadID } = event;
         const system = global.cgSystem;
         const colors = ["red", "blue", "yellow", "green", "pink", "white"];
+        const now = Date.now();
 
-        // --- ADMIN: RESET (Refund & Global Broadcast) ---
+        const design = (status, body) =>
+            `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+            `      𝗠𝗔𝗖𝗞𝗬 𝗦𝗬𝗦𝗧𝗘𝗠 𝗖𝗢𝗟𝗢𝗥𝗦\n` +
+            `┗━━━━━━━━━━━━━━━━━━━━┛\n` +
+            ` ❯ 𝖲𝗍𝖺𝗍𝗎𝗌: ${status}\n` +
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+            `${body}\n` +
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+        const broadcast = async (content) => {
+            const allThreads = (await threadsData.getAll()).filter(t => t.isGroup);
+            for (const thread of allThreads) {
+                api.sendMessage(content, thread.threadID);
+            }
+        };
+
+        // --- 🚨 MACKY PNP GUARD ---
+        if (fs.existsSync(PRISON_FILE)) {
+            const prisonList = fs.readJsonSync(PRISON_FILE);
+            if (prisonList[senderID] && now < prisonList[senderID].releaseAt) {
+                return message.reply(design("𝖠𝖼𝖼𝖾𝗌𝗌 𝖣𝖾𝗇𝗂𝖾𝖽", " 🚨 **𝗪𝗔𝗥𝗥𝗔𝗡𝗧 𝗗𝗘𝗧𝗘𝗖𝗧𝗘𝗗**\n 𝖯𝗋𝗂𝗌𝗈𝗇𝖾𝗋𝗌 𝖼𝖺𝗇𝗇𝗈𝗍 𝗀𝖺𝗆𝖻𝗅𝖾."));
+            }
+        }
+
+        // --- 🏛️ LOAN BAN ---
+        if (fs.existsSync(BANK_FILE)) {
+            const bankData = fs.readJsonSync(BANK_FILE);
+            if (bankData[senderID] && bankData[senderID].loan > 0) {
+                return message.reply(design("𝖠𝖼𝖼𝖾𝗌𝗌 𝖣𝖾𝗇𝗂𝖾𝖽", " ⚠️ **𝖱𝖾𝗌𝗍𝗋𝗂𝖼𝗍𝗂𝗈𝗇:** 𝖫𝗈𝖺𝗇 𝖣𝖾𝗍𝖾𝖼𝗍𝖾𝖽\n 𝖯𝖺𝗒 𝗒𝗈𝗎𝗋 𝖽𝖾𝖻𝗍 𝗍𝗈 𝗉𝗅𝖺𝗒!"));
+            }
+        }
+
+        // --- 🛠️ ADMIN COMMANDS ---
         if (args[0] === "reset") {
             if (permission < 1) return message.reply("❌ Admins only.");
-            if (system.stage === "closed") return message.reply("⚠ No active round to reset.");
-
-            clearTimeout(system.timer);
-            for (const p of system.pool) {
-                const u = await usersData.get(p.senderID);
-                await usersData.set(p.senderID, { money: (u.money || 0) + p.bet });
-            }
-
-            const refundCount = system.pool.length;
             system.stage = "closed";
             system.pool = [];
-
-            const threads = await api.getThreadList(100, null, ["INBOX"]);
-            const groupThreads = threads.filter(t => t.isGroup);
-            const resetMsg = `🔄 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘: 𝗥𝗘𝗦𝗘𝗧 𝗡𝗢𝗧𝗜𝗖𝗘**\n━━━━━━━━━━━━━━━\n⚠ Match cancelled by Admin.\n💰 **Refunds:** ${refundCount} players have been paid back.`;
-
-            groupThreads.forEach(g => api.sendMessage(resetMsg, g.threadID));
-            return;
+            return message.reply(design("𝖲𝗒𝗌𝗍𝖾𝗆 𝖱𝖾𝗌𝖾𝗍", " 🔄 𝖢𝗈𝗅𝗈𝗋 𝖦𝖺𝗆𝖾 𝗁𝖺𝗌 𝖻𝖾𝖾𝗇 𝖼𝗅𝖾𝖺𝗋𝖾𝖽."));
         }
 
-        // --- ACTION: STATUS ---
-        if (args[0] === "status") {
-            if (system.stage === "closed") return message.reply("🌈 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘**: 𝗖𝗟𝗢𝗦𝗘𝗗");
-            const limit = system.stage === "betting" ? 300000 : 120000;
-            const remaining = Math.max(0, Math.ceil((limit - (Date.now() - system.startTime)) / 1000));
-            return message.reply(`🌈 **𝗖𝗚 𝗦𝗧𝗔𝗧𝗨𝗦**: ${system.stage.toUpperCase()}\n⏰ Ends in: ${remaining}s\n👥 Players: ${system.pool.length}`);
-        }
-
-        // --- ADMIN: START ---
         if (args[0] === "start") {
             if (permission < 1) return message.reply("❌ Admins only.");
-            if (system.stage !== "closed") return message.reply("⚠ Match in progress.");
+            if (system.stage !== "closed") return message.reply("⚠ A round is already active.");
 
             system.stage = "betting";
             system.pool = [];
-            system.startTime = Date.now();
 
-            const threads = await api.getThreadList(100, null, ["INBOX"]);
-            const groupThreads = threads.filter(t => t.isGroup);
-            const startMsg = "📢 𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘: 𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗢𝗣𝗘𝗡\n━━━━━━━━━━━━━━━\n🕒 𝟱 𝗠𝗶𝗻𝘂𝘁𝗲𝘀 to place bets!\n\n💡 **Usage:** `!cg <bet> <color>`\n📝 **Examples:** `!cg 500 red` or `!cg 1000 blue`\n🎨 **Colors:** red, blue, yellow, green, pink, white";
+            await broadcast(design("𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗢𝗣𝗘𝗡", " 🕒 **𝖳𝗂𝗆𝖾:** 𝟤 𝖬𝗂𝗇𝗎𝗍𝖾𝗌\n 🎨 **𝖢𝗈𝗅𝗈𝗋𝗌:** Red, Blue, Yellow,\n Green, Pink, White\n\n 👉 `!cg [amount] [color]`"));
 
-            groupThreads.forEach(g => api.sendMessage(startMsg, g.threadID));
-
-            // Phase 1: End Betting
-            system.timer = setTimeout(() => {
+            system.timer = setTimeout(async () => {
                 if (system.pool.length === 0) {
                     system.stage = "closed";
-                    groupThreads.forEach(g => api.sendMessage("💨 **𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘**: Cancelled. No bets were placed.", g.threadID));
-                    return;
+                    return await broadcast(design("𝗖𝗔𝗡𝗖𝗘𝗟𝗟𝗘𝗗", " 💨 𝖭𝗈 𝖻𝖾𝗍𝗌 𝗐𝖾𝗋𝖾 𝗉𝗅𝖺𝖼𝖾𝖽."));
                 }
 
                 system.stage = "ongoing";
-                system.startTime = Date.now();
-                groupThreads.forEach(g => api.sendMessage("🚫 **𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗖𝗟𝗢𝗦𝗘𝗗**\n🎲 Dice are rolling! Results in 2 minutes...", g.threadID));
+                await broadcast(design("𝗦𝗣𝗜𝗡𝗡𝗜𝗡𝗚", " 🎲 𝖳𝗁𝖾 𝖽𝗂𝖼𝖾 𝖺𝗋𝖾 𝗋𝗈𝗅𝗅𝗂𝗇𝗀..."));
 
-                // Phase 2: Results
                 setTimeout(async () => {
                     const roll = [colors[Math.floor(Math.random()*6)], colors[Math.floor(Math.random()*6)], colors[Math.floor(Math.random()*6)]];
-                    let winnerList = "";
+                    const emojis = { red: "🔴", blue: "🔵", yellow: "🟡", green: "🟢", pink: "🌸", white: "⚪" };
+                    let winnersList = "";
 
                     for (const p of system.pool) {
                         const matches = roll.filter(c => c === p.chosen).length;
                         if (matches > 0) {
-                            let winAmt = p.bet * (matches + 1);
-                            let allInv = fs.existsSync(SHOP_FILE) ? JSON.parse(fs.readFileSync(SHOP_FILE, "utf8")) : {};
-                            let inv = allInv[p.senderID] || {};
-                            if (inv["Crystal Dice"]) winAmt *= 2;
+                            let winMultiplier = matches + 1;
+                            
+                            // LUCK CHARM INTEGRATION
+                            let inventory = fs.existsSync(SHOP_FILE) ? fs.readJsonSync(SHOP_FILE) : {};
+                            if (inventory[p.senderID]?.["Luck Charm"] > 0) {
+                                winMultiplier += 1; // Extra boost
+                                inventory[p.senderID]["Luck Charm"] -= 1;
+                                fs.writeJsonSync(SHOP_FILE, inventory);
+                            }
 
+                            const winAmt = p.bet * winMultiplier;
                             const u = await usersData.get(p.senderID);
                             await usersData.set(p.senderID, { money: (u.money || 0) + winAmt });
-                            winnerList += `✨ ${p.name}: +$${winAmt.toLocaleString()} (${matches}x)\n`;
+                            winnersList += ` • ${u.name}: +$${winAmt.toLocaleString()}\n`;
                         }
                     }
 
-                    const finalResult = `🎲 𝗖𝗢𝗟𝗢𝗥 𝗚𝗔𝗠𝗘 𝗥𝗘𝗦𝗨𝗟𝗧\n━━━━━━━━━━━━━━━\nResults: [ ${roll.join(" | ").toUpperCase()} ]\n\n📜 **𝗪𝗜𝗡𝗡𝗘𝗥𝗦:**\n${winnerList || "No w
+                    const resultText = ` 🎲 **𝗥𝗼𝗹𝗹:** ${emojis[roll[0]]} | ${emojis[roll[1]]} | ${emojis[roll[2]]}\n\n 🏆 **𝗪𝗶𝗻𝗻𝗲𝗿𝘀:**\n${winnersList || " 𝖭𝗈 𝗐𝗂𝗇𝗇𝖾𝗋𝗌."}`;
+                    await broadcast(design("𝗥𝗘𝗦𝗨𝗟𝗧𝗦", resultText));
+                    system.stage = "closed";
+                    system.pool = [];
+                }, 5000);
+            }, 120000);
+            return;
+        }
+
+        // --- 💰 PLAYER BETTING ---
+        const bet = parseInt(args[0]);
+        const chosenColor = args[1]?.toLowerCase();
+
+        if (system.stage !== "betting") return message.reply("❌ Betting is currently closed.");
+        if (isNaN(bet) || bet < 100) return message.reply("❌ Usage: `!cg [amount] [color]`");
+        if (!colors.includes(chosenColor)) return message.reply("❌ Invalid color.");
+
+        const uData = await usersData.get(senderID);
+        if (uData.money < bet) return message.reply("💸 You don't have enough money.");
+
+        await usersData.set(senderID, { money: uData.money - bet });
+        system.pool.push({ senderID, bet, chosen: chosenColor });
+        return message.reply(`✅ **𝗕𝗘𝗧 𝗣𝗟𝗔𝗖𝗘𝗗:** $${bet.toLocaleString()} on ${chosenColor.toUpperCase()}!`);
+    }
+};
