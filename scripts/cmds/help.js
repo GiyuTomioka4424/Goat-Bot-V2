@@ -1,61 +1,84 @@
 const fs = require("fs-extra");
 const path = require("path");
 
+const PRISON_FILE = path.join(process.cwd(), "prisonData.json");
+const BANK_FILE = path.join(__dirname, "cache", "bankData.json");
+
 module.exports = {
     config: {
         name: "help",
-        version: "2.0",
-        author: "Gemini",
+        version: "3.2",
+        author: "Gab Yu", // 👑 Updated to your name
         countDown: 5,
         role: 0,
-        category: "system",
-        guide: { en: "{pn} [command name]" }
+        category: "system"
     },
 
-    onStart: async function ({ message, args, event, usersData }) {
+    onStart: async function ({ message, args, event, api, usersData, permission }) {
         const { commands } = global.GoatBot;
         const { senderID } = event;
-        const bankPath = path.join(__dirname, "cache", "bankData.json");
+        const now = Date.now();
+        
+        // 👑 AUTHOR/OWNER BYPASS
+        // This ensures the creator (Gab Yu) and Admins aren't blocked by their own laws.
+        const isOwner = permission >= 2;
 
-        // --- 1. LOAN CHECK FOR GAMBLING BAN ---
+        // --- 🚨 MACKY PNP RESTRICTION GUARD ---
+        if (!isOwner && fs.existsSync(PRISON_FILE)) {
+            const prisonList = fs.readJsonSync(PRISON_FILE);
+            if (prisonList[senderID] && now < prisonList[senderID].releaseAt) {
+                return message.reply(
+                    `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+                    `   🚨 𝗠𝗔𝗖𝗞𝗬 𝗣𝗡𝗣 𝗥𝗘𝗦𝗧𝗥𝗜𝗖𝗧𝗜𝗢𝗡\n` +
+                    `┗━━━━━━━━━━━━━━━━━━━━┛\n` +
+                    `  ❯ 𝖲𝗍𝖺𝗍𝗎𝗌: 𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗\n` +
+                    `  ❯ 𝖱𝖾𝖺𝗌𝗈𝗇: 𝖠𝖼𝗍𝗂𝗏𝖾 𝖶𝖺𝗋𝗋𝖺𝗇𝗍\n` +
+                    ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+                    ` ⚖️ 𝖢𝗈𝗆𝗆𝖺𝗇𝖽 𝗉𝗋𝗂𝗏𝗂𝗅𝖾𝗀𝖾𝗌 𝗋𝖾𝗏𝗈𝗄𝖾𝖽.`
+                );
+            }
+        }
+
+        // --- 💰 LOAN CHECK (GAMBLING BAN) ---
         let hasLoan = false;
-        if (fs.existsSync(bankPath)) {
-            const bankData = fs.readJsonSync(bankPath);
+        if (!isOwner && fs.existsSync(BANK_FILE)) {
+            const bankData = fs.readJsonSync(BANK_FILE);
             if (bankData[senderID] && bankData[senderID].loan > 0) hasLoan = true;
         }
 
         const design = (title, body) => 
-            `╔════════════════════╗\n` +
-            `    📜  𝗠𝗔𝗖𝗞𝗬 𝗛𝗘𝗟𝗣 𝗠𝗘𝗡𝗨\n` +
-            `╚════════════════════╝\n` +
-            ` ➤ 𝖢𝖺𝗍𝖾𝗀𝗈𝗋𝗒: ${title}\n` +
-            `────────────────────\n` +
+            `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+            `      𝗠𝗔𝗖𝗞𝗬 𝗛𝗘𝗟𝗣 𝗗𝗜𝗥𝗘𝗖𝗧𝗢𝗥𝗬\n` +
+            `┗━━━━━━━━━━━━━━━━━━━━┛\n` +
+            ` ❯ 𝖢𝖺𝗍𝖾𝗀𝗈𝗋𝗒: ${title}\n` +
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
             `${body}\n` +
-            `────────────────────\n` +
-            `💡 𝖳𝗒𝗉𝖾 !𝗁𝖾𝗅𝗉 [𝗇𝖺𝗆𝖾] 𝖿𝗈𝗋 𝖽𝖾𝗍𝖺𝗂𝗅𝗌`;
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+            ` 💡 𝖴𝗌𝖾 !𝗁𝖾𝗅𝗉 [𝗇𝖺𝗆𝖾] 𝖿𝗈𝗋 𝗂𝗇𝖿𝗈.`;
 
-        // --- 2. SINGLE COMMAND DETAIL ---
+        // --- SINGLE COMMAND VIEW ---
         if (args[0]) {
-            const command = commands.get(args[0].toLowerCase());
-            if (!command) return message.reply(`❌ Command "${args[0]}" not found.`);
+            const cmd = commands.get(args[0].toLowerCase());
+            if (!cmd) return message.reply("❌ Command not found in the Macky Database.");
+
+            const { config } = cmd;
+            let detail = 
+                ` • 𝗡𝗮𝗺𝗲: ${config.name}\n` +
+                ` • 𝗔𝘂𝘁𝗵𝗼𝗿: ${config.author || "Unknown"}\n` +
+                ` • 𝗖𝗼𝗼𝗹𝗱𝗼𝘄𝗻: ${config.countDown}𝗌\n` +
+                ` • 𝗥𝗼𝗹𝗲: ${config.role == 2 ? "Admin" : config.role == 1 ? "Moderator" : "User"}\n` +
+                ` • 𝗨𝘀𝗮𝗴𝗲: ${config.guide?.en || "No guide"}`;
             
-            const config = command.config;
-            let detail = ` 🏷️ 𝗡𝗮𝗺𝗲: ${config.name}\n` +
-                         ` 📋 𝗗𝗲𝘀𝗰: ${config.description.en || config.description}\n` +
-                         ` ⏱️ 𝗖𝗼𝗼𝗹𝗱𝗼𝘄𝗻: ${config.countDown}s\n` +
-                         ` 🔑 𝗥𝗼𝗹𝗲: ${config.role == 2 ? "Admin" : "User"}\n` +
-                         ` 📖 𝗨𝘀𝗮𝗴𝗲: ${config.guide?.en || "No guide available"}`;
-            return message.reply(design("COMMAND DETAILS", detail));
+            return message.reply(design("𝗗𝗘𝗧𝗔𝗜𝗟𝗦", detail));
         }
 
-        // --- 3. FULL COMMAND LIST ---
+        // --- FULL MENU VIEW ---
         const categories = {};
         commands.forEach((cmd) => {
-            const cat = cmd.config.category || "Uncategorized";
-            
-            // Apply your Rule: Hide gambling games if they have a loan
-            if (hasLoan && (cat.toLowerCase() === "game" || cat.toLowerCase() === "economy")) {
-                // We keep 'bank' visible so they can pay the loan, but hide others
+            const cat = cmd.config.category || "General";
+
+            // Regular users with loans cannot see games/economy (except bank)
+            if (!isOwner && hasLoan && (cat.toLowerCase() === "game" || cat.toLowerCase() === "economy")) {
                 if (cmd.config.name !== "bank" && cmd.config.name !== "dhbc") return;
             }
 
@@ -63,16 +86,15 @@ module.exports = {
             categories[cat].push(cmd.config.name);
         });
 
-        let listMsg = "";
+        let listMsg = isOwner ? `⭐ **𝗔𝗨𝗧𝗛𝗢𝗥 𝗣𝗥𝗜𝗩𝗜𝗟𝗘𝗚𝗘 𝗔𝗖𝗧𝗜𝗩𝗘**\n\n` : "";
         for (const [category, cmds] of Object.entries(categories)) {
-            listMsg += `📂 𝗧𝗼𝗽𝗶𝗰: ${category.toUpperCase()}\n`;
-            listMsg += `» ${cmds.join(", ")}\n\n`;
+            listMsg += ` 📂 **${category.toUpperCase()}**\n ↳ ${cmds.join(", ")}\n\n`;
         }
 
-        if (hasLoan) {
-            listMsg += `⚠️ 𝗡𝗼𝘁𝗲: Some games are hidden because you have an active loan! Pay it via !bank pay to unlock them.`;
+        if (!isOwner && hasLoan) {
+            listMsg += ` ⚠️ **𝗗𝗘𝗕𝗧 𝗔𝗟𝗘𝗥𝗧:**\n 𝖦𝖺𝗆𝖻𝗅𝗂𝗇𝗀 𝖼𝗈𝗆𝗆𝖺𝗇𝖽𝗌 𝗁𝗂𝖽𝖽𝖾𝗇 𝖽𝗎𝖾 𝗍𝗈 𝖺𝖼𝗍𝗂𝗏𝖾 𝗅𝗈𝖺𝗇!`;
         }
 
-        return message.reply(design("ALL COMMANDS", listMsg));
+        return message.reply(design("𝗔𝗟𝗟 𝗖𝗢𝗠𝗠𝗔𝗡𝗗𝗦", listMsg.trim()));
     }
 };
