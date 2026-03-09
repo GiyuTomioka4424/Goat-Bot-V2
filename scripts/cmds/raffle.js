@@ -1,9 +1,10 @@
 const fs = require("fs-extra");
 const path = require("path");
 
-// Adjusted paths to match your system
-const SHOP_FILE = path.join(__dirname, "cache", "userItems.json");
-const BANK_FILE = path.join(__dirname, "cache", "bankData.json");
+// FIXED: Using process.cwd() for global synchronization
+const ITEM_FILE = path.join(process.cwd(), "userItems.json");
+const BANK_FILE = path.join(process.cwd(), "cache", "bankData.json");
+const PRISON_FILE = path.join(process.cwd(), "prisonData.json");
 
 if (!global.raffleSystem) {
     global.raffleSystem = {
@@ -15,59 +16,74 @@ if (!global.raffleSystem) {
 module.exports = {
     config: {
         name: "raffle",
-        version: "1.7.1",
+        version: "1.8",
         author: "Gab Yu",
         countDown: 5,
         role: 0,
         category: "fun"
     },
 
-    onStart: async function ({ message, args, event, api, usersData, permission }) {
+    onStart: async function ({ message, args, event, api, usersData, permission, threadsData }) {
         const { senderID, threadID } = event;
         const system = global.raffleSystem;
+        const now = Date.now();
 
-        // --- ACTION: START ---
+        // --- 🚨 MACKY PNP GUARD ---
+        if (fs.existsSync(PRISON_FILE)) {
+            const prisonList = fs.readJsonSync(PRISON_FILE);
+            if (prisonList[senderID] && now < prisonList[senderID].releaseAt) {
+                return message.reply("🚨 **𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗:** Prisoners cannot enter raffles!");
+            }
+        }
+
+        const design = (status, body) =>
+            `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+            `     𝗠𝗔𝗖𝗞𝗬 𝗦𝗬𝗦𝗧𝗘𝗠 𝗥𝗔𝗙𝗙𝗟𝗘\n` +
+            `┗━━━━━━━━━━━━━━━━━━━━┛\n` +
+            ` ❯ 𝖲𝗍𝖺𝗍𝗎𝗌: ${status}\n` +
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
+            `${body}\n` +
+            ` ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+        const broadcast = async (content) => {
+            const allThreads = (await threadsData.getAll()).filter(t => t.isGroup);
+            for (const thread of allThreads) {
+                api.sendMessage(content, thread.threadID);
+            }
+        };
+
+        // --- 🟢 ADMIN: START ---
         if (args[0] === "start") {
             if (permission < 1) return message.reply("❌ Admins only.");
-            if (system.isOpen) return message.reply("⚠️ A raffle is already in progress.");
+            if (system.isOpen) return message.reply("⚠️ Raffle is already open.");
 
             system.isOpen = true;
             system.participants = [];
 
-            try {
-                const threads = await api.getThreadList(100, null, ["INBOX"]);
-                const groupThreads = threads.filter(t => t.isGroup);
-
-                groupThreads.forEach(g => {
-                    api.sendMessage(
-                        "🎫 **𝗠𝗔𝗖𝗞𝗬 𝗠𝗬𝗦𝗧𝗘𝗥𝗬 𝗥𝗔𝗙𝗙𝗟𝗘**\n━━━━━━━━━━━━━━━\n" +
-                        "🎁 **𝗣𝗥𝗜𝗭𝗘𝗦:** [SECRET ITEMS & CASH]\n" +
-                        "👥 **𝗪𝗶𝗻𝗻𝗲𝗿𝘀:** 4 Lucky Participants!\n\n" +
-                        "👉 Type `!raffle join` to enter!", g.threadID);
-                });
-            } catch (err) {
-                return message.reply("📢 Raffle started locally. Global broadcast limited.");
-            }
+            await broadcast(design("𝗕𝗘𝗧𝗧𝗜𝗡𝗚 𝗢𝗣𝗘𝗡", 
+                " 🎁 **Prizes:** $20M Cash & Rare Items\n" +
+                " 👥 **Winners:** 4 Lucky Players\n\n" +
+                " 👉 Type `!raffle join` to enter!"));
             return;
         }
 
-        // --- ACTION: JOIN ---
+        // --- 📥 PLAYER: JOIN ---
         if (args[0] === "join") {
-            if (!system.isOpen) return message.reply("🏟️ The raffle is closed.");
+            if (!system.isOpen) return message.reply("🏟️ Raffle is closed.");
             if (system.participants.some(p => p.uid === senderID)) return message.reply("❌ Already joined.");
 
-            // Rule: You cannot join a raffle to "gamble" for items if you have a loan
+            // LOAN CHECK
             const bankData = fs.existsSync(BANK_FILE) ? fs.readJsonSync(BANK_FILE) : {};
             if (bankData[senderID] && bankData[senderID].loan > 0) {
-                return message.reply("🚫 **ENTRY DENIED**: Clear your bank debt before joining the mystery raffle!");
+                return message.reply("🚫 **𝗟𝗢𝗔𝗡 𝗗𝗘𝗧𝗘𝗖𝗧𝗘𝗗:** Pay your debt before joining!");
             }
 
-            let name = await usersData.getName(senderID);
-            system.participants.push({ uid: senderID, name: name || senderID });
-            return message.reply(`✅ **ENTRY CONFIRMED** (#${system.participants.length})`);
+            const name = await usersData.getName(senderID);
+            system.participants.push({ uid: senderID, name: name });
+            return message.reply(`✅ **ENTRY CONFIRMED** (Ticket #${system.participants.length})`);
         }
 
-        // --- ACTION: SPIN ---
+        // --- 🎡 ADMIN: SPIN ---
         if (args[0] === "spin") {
             if (permission < 1) return message.reply("❌ Admins only.");
             if (!system.isOpen || system.participants.length < 4) return message.reply("⚠️ Need at least 4 players.");
@@ -77,56 +93,37 @@ module.exports = {
 
             const winnersCash = pool.splice(0, 2);
             const winnersItem = pool.splice(0, 2);
-            const mysteryItems = ["Arena VIP Pass", "Gold Miner Pickaxe", "Bank Shield", "Double Money Card"];
+            const mysteryItems = ["Arena VIP Pass", "Iron Pickaxe", "Luck Charm", "Vault Key"];
 
-            // Process Cash Winners
+            // 1. Process Cash Winners ($20M)
+            let cashResults = "";
             for (const w of winnersCash) {
-                let prize = 20000000;
+                const prize = 20000000;
                 const u = await usersData.get(w.uid);
-                let currentMoney = u.money || 0;
-                let bankData = fs.existsSync(BANK_FILE) ? fs.readJsonSync(BANK_FILE) : {};
-
-                if (bankData[w.uid] && bankData[w.uid].loan > 0) {
-                    const toBank = Math.min(prize, bankData[w.uid].loan);
-                    bankData[w.uid].loan -= toBank;
-                    prize -= toBank;
-                    fs.writeJsonSync(BANK_FILE, bankData, { spaces: 2 });
-                }
-
-                if (prize > 0 && currentMoney < 0) {
-                    const toFine = Math.min(prize, Math.abs(currentMoney));
-                    currentMoney += toFine;
-                    prize -= toFine;
-                }
-                await usersData.set(w.uid, { money: currentMoney + prize });
+                await usersData.set(w.uid, { money: (u.money || 0) + prize });
+                cashResults += ` • ${w.name}: +$20,000,000\n`;
             }
 
-            // Process Item Winners
-            if (!fs.existsSync(path.join(__dirname, "cache"))) fs.mkdirSync(path.join(__dirname, "cache"));
-            let inventory = fs.existsSync(SHOP_FILE) ? fs.readJsonSync(SHOP_FILE) : {};
-            winnersItem.forEach(w => {
-                const awardedItem = mysteryItems[Math.floor(Math.random() * mysteryItems.length)];
-                if (!inventory[w.uid]) inventory[w.uid] = [];
-                inventory[w.uid].push(awardedItem);
-                w.itemWon = awardedItem;
-            });
-            fs.writeJsonSync(SHOP_FILE, inventory, { spaces: 2 });
+            // 2. Process Item Winners
+            let itemResults = "";
+            let inventory = fs.existsSync(ITEM_FILE) ? fs.readJsonSync(ITEM_FILE) : {};
+            
+            for (const w of winnersItem) {
+                const item = mysteryItems[Math.floor(Math.random() * mysteryItems.length)];
+                if (!inventory[w.uid]) inventory[w.uid] = {};
+                inventory[w.uid][item] = (inventory[w.uid][item] || 0) + 1;
+                itemResults += ` • ${w.name}: [ ${item} ]\n`;
+            }
+            fs.writeJsonSync(ITEM_FILE, inventory);
 
-            const resultMsg = 
-                "🏆 **𝗥𝗔𝗙𝗙𝗟𝗘 𝗥𝗘𝗦𝗨𝗟𝗧𝗦**\n━━━━━━━━━━━━━━━\n\n" +
-                "💰 **₱20,000,000 CASH WINNERS:**\n" +
-                `1. ${winnersCash[0].name}\n` +
-                `2. ${winnersCash[1].name}\n\n` +
-                "🎁 **MYSTERY ITEM WINNERS:**\n" +
-                `1. ${winnersItem[0].name} (${winnersItem[0].itemWon})\n` +
-                `2. ${winnersItem[1].name} (${winnersItem[1].itemWon})\n\n` +
-                "✨ Prizes have been distributed!";
-
-            const threads = await api.getThreadList(100, null, ["INBOX"]);
-            threads.filter(t => t.isGroup).forEach(g => api.sendMessage(resultMsg, g.threadID));
+            await broadcast(design("𝗥𝗔𝗙𝗙𝗟𝗘 𝗥𝗘𝗦𝗨𝗟𝗧𝗦", 
+                `💰 **CASH WINNERS:**\n${cashResults}\n` +
+                `🎁 **ITEM WINNERS:**\n${itemResults}`));
+            
+            system.participants = [];
             return;
         }
 
-        return message.reply("❓ Usage: `!raffle [start/join/spin]`");
+        return message.reply("❓ `!raffle join` or Admin: `!raffle start/spin`.");
     }
 };
